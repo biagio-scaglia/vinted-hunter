@@ -152,12 +152,26 @@ async def search(request: SearchRequest):
 
 @app.post("/ocr")
 async def ocr_image(file: UploadFile = File(...)):
+    from PIL import ImageEnhance, ImageFilter
+
     contents = await file.read()
     image = Image.open(io.BytesIO(contents)).convert("RGB")
+
+    # Upscale small images — EasyOCR works best at ≥1000px on the long side
+    w, h = image.size
+    long_side = max(w, h)
+    if long_side < 1200:
+        scale = 1200 / long_side
+        image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+    # Sharpen then boost contrast
+    image = image.filter(ImageFilter.SHARPEN)
+    image = ImageEnhance.Contrast(image).enhance(1.8)
+
     img_array = np.array(image)
 
     reader = get_ocr_reader()
-    results = reader.readtext(img_array, detail=0, paragraph=True)
+    results = reader.readtext(img_array, detail=0, paragraph=True, width_ths=0.7, ycenter_ths=0.5)
 
     text = " ".join(results).strip()
     return {"text": text}
