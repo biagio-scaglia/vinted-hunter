@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 10, 10, 31;
+  --background-end-rgb: 2, 2, 12;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: radial-gradient(circle at top center, #1e1b4b 0%, #020617 100%);
+  min-height: 100vh;
+}
+
+.ant-layout {
+  background: transparent !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.2);
+  border-radius: 10px;
+}
+
+.product-card-hover {
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.product-card-hover:hover {
+  transform: translateY(-10px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(139, 92, 246, 0.15);
+}
+
+.chat-container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.made-by {
+  font-size: 11px;
+  color: #a78bfa;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  font-weight: 900;
+  text-align: center;
+  padding: 30px;
+  opacity: 0.8;
+  text-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+}
