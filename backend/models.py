@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 
+
 class ProductResponse(BaseModel):
     id: str
     title: str
@@ -9,3 +10,4 @@ class ProductResponse(BaseModel):
     link: str
     image: Optional[str] = None
     condition: Optional[str] = None
+    source: str = "vinted"

@@ -1,80 +1,156 @@
-# 🛰️ Vinted Hunter Pro
+# Vinted Hunter Pro
 
-**Hunters Research Center** - An industrial-grade product hunting system designed for high-performance marketplace monitoring and visual intelligence.
+**Hunters Research Center** — Multi-marketplace research and monitoring platform with visual OCR search, real-time price analytics, and automated radar alerts.
 
-## 🚀 Key Features
+## Features
 
-### 📸 Pro Visual Radar (EasyOCR)
-Advanced image processing pipeline that allows you to search for products simply by uploading a photo or screenshot.
-- **Precision OCR**: Powered by `EasyOCR` for high-accuracy text extraction from screenshots (WhatsApp, Reels, apps) and product labels.
-- **Smart NLP Cleaning**: Automatically strips noise (e.g., "vendo", "prezzo", timestamps) to isolate the core product keywords.
-- **Multi-Language**: Native support for Italian and English text recognition.
+### Visual OCR Search
+Search products by uploading a photo or screenshot. EasyOCR runs locally — your images never leave the server.
+- Supports Italian and English text
+- Smart noise filtering (strips timestamps, common words, irrelevant tokens)
+- Confidence threshold filtering to improve extraction quality
 
-### 🔍 Optimized Vinted Engine
-A streamlined search aggregator focused exclusively on **Vinted** for maximum stability and speed.
-- **Real-time Results**: Combined and sorted by price for immediate comparison.
-- **Price Analytics**: Built-in market calculation that shows the estimated average price for every search.
-- **History & Monitoring**: Save your favorite searches as active "Radars" and get notified when new items match your criteria.
+### Multi-Store Search
+Search across multiple marketplaces simultaneously and compare results side by side.
+- **Vinted** — concurrent multi-page fetch (48 results/page, 2 pages)
+- **Subito.it** — Italian classifieds with price filtering
+- Extensible registry: adding a new store requires only one new Python file
 
-### 🌌 Cyber-Violet UI
-A premium, futuristic interface designed for power users.
-- **Modern Palette**: Deep "Cyber-Violet" theme with high-contrast white-on-dark aesthetics.
-- **Responsive Drawer**: Minimalist sidebar for managing search history and active monitors.
-- **Smooth Animations**: Micro-interactions and smooth transitions for a professional feel.
+### Price Filters & Radar Alerts
+- Server-side price filtering (min/max passed directly to each marketplace API)
+- Save any search as an active Radar — the scheduler checks for new items every 10 minutes
+- Desktop notifications when new matches are found
 
-## 🛠️ Technology Stack
+### UI
+- Dark "Cyber-Violet" theme (Ant Design v6, Next.js 16, React 19)
+- Fully responsive (desktop sidebar + mobile drawer)
+- WCAG 2.1 AA accessibility: skip navigation, focus-visible, keyboard navigation, ARIA labels, screen-reader live regions
 
-- **Backend**: FastAPI (Python), EasyOCR, SQLAlchemy, SQLite, APScheduler.
-- **Frontend**: Next.js (React), Ant Design (AntD), Tailwind CSS.
-- **Intelligence**: PyTorch-based OCR models for local text extraction (Privacy-focused).
+## Architecture
 
-## 📦 Installation & Setup
+```
+vinted/
+├── backend/
+│   ├── main.py                  # FastAPI app factory + lifespan
+│   ├── models.py                # Pydantic response models
+│   ├── middleware/              # Rate limiting, sanitization, security headers, integrity
+│   ├── routers/                 # search.py, alerts.py, ocr.py
+│   ├── services/
+│   │   ├── base.py              # BaseMarketplace abstract class
+│   │   ├── registry.py          # Service registry
+│   │   ├── vinted.py            # VintedService
+│   │   └── subito.py            # SubitoService
+│   ├── scheduler/engine.py      # APScheduler — runs check_alerts every 10 min
+│   └── storage/database.py      # SQLAlchemy + SQLite
+└── frontend/
+    ├── src/app/
+    │   ├── page.tsx             # Main dashboard + landing
+    │   ├── layout.tsx           # Root layout, metadata, PWA
+    │   ├── globals.css          # Theme, responsive breakpoints, a11y
+    │   ├── components/
+    │   │   ├── ProductCard.tsx  # Per-store colored card, keyboard accessible
+    │   │   └── Sidebar.tsx      # Filters, source selector, radar list
+    │   ├── privacy/page.tsx     # GDPR privacy policy
+    │   └── terms/page.tsx       # Terms of service
+    └── src/lib/
+        ├── api.ts               # Typed API client
+        └── types.ts             # Shared TypeScript types
+```
+
+## Tech Stack
+
+| Layer | Tech |
+|---|---|
+| Backend | Python 3.10+, FastAPI, SQLAlchemy, APScheduler, httpx |
+| OCR | EasyOCR, PyTorch (local inference) |
+| Frontend | Next.js 16, React 19, Ant Design v6, Tailwind CSS |
+| Database | SQLite (local) |
+
+## Installation
 
 ### Prerequisites
 - Python 3.10+
 - Node.js 18+
 
-### 1. Backend Setup
+### Backend
 ```bash
-cd backend
+# From project root
 python -m venv venv
-source venv/bin/activate  # venv\Scripts\activate on Windows
+source venv/bin/activate       # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-# Requirements: fastapi, easyocr, httpx, sqlalchemy, apscheduler, uvicorn
 ```
 
-### 2. Frontend Setup
+### Frontend
 ```bash
 cd frontend
 npm install
 ```
 
-## 🚀 Running the Application
+## Running
 
-### Start Backend
+### Backend
 ```bash
-cd backend
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# From project root (activating venv first)
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Start Frontend
+### Frontend
 ```bash
 cd frontend
 npm run dev
 ```
 
-## 🛡️ Production & Security
+Frontend: [http://localhost:3000](http://localhost:3000)
+API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
-Vinted Hunter Pro is hardened for production environments with:
-- **Rate Limiting**: Protects the API from scraping and brute-force (20 req/min).
-- **Security Headers**: HSTS, CSP, and XSS Protection enabled via middleware.
-- **Privacy First**: Local AI processing (OCR) ensures data never leaves your server.
+## API Endpoints
 
-### 🌐 Cloudflare Integration
-To put this center behind Cloudflare:
-1. **SSL/TLS**: Set to "Full (Strict)" to leverage the HSTS headers.
-2. **WAF Rules**: Enable "Bot Fight Mode" to complement the internal rate limiting.
-3. **Caching**: Utilize "Edge Cache TTL" for search UI assets to improve LCP.
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/search` | Search across one or more stores |
+| `GET` | `/sources` | List available marketplaces |
+| `GET` | `/alerts` | List saved radar alerts |
+| `POST` | `/save-alert` | Create a new radar alert |
+| `DELETE` | `/alerts/{id}` | Delete an alert |
+| `POST` | `/ocr` | Extract text from an uploaded image |
+
+### Search request body
+```json
+{
+  "query": "Nintendo DS",
+  "min_price": 10,
+  "max_price": 80,
+  "sources": ["vinted", "subito"]
+}
+```
+
+## Security
+
+- **Rate limiting** — 20 req/min per IP; ban threshold after repeated violations
+- **Input sanitization** — XSS, SQL injection, JavaScript injection patterns blocked
+- **Security headers** — HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
+- **Integrity header** — custom `X-Radar-Integrity` header required for mutating requests
+- **Privacy by design** — OCR runs locally; no data sent to external AI APIs
+
+### Cloudflare (optional)
+1. Set SSL/TLS to **Full (Strict)** to use HSTS headers correctly
+2. Enable **Bot Fight Mode** to complement internal rate limiting
+3. Set **Edge Cache TTL** for static frontend assets
+
+## Accessibility (WCAG 2.1 AA)
+
+- Skip navigation link for keyboard users
+- All interactive elements have `aria-label` or visible labels
+- Clickable cards and list items are keyboard-navigable (`role="button"`, `onKeyDown`)
+- Live region announces search results to screen readers
+- Semantic HTML (`<dl>/<dt>/<dd>` for stats, `<section>` with `aria-labelledby` in docs)
+- `focus-visible` ring for keyboard navigation, suppressed for mouse users
+- `lang="it"` on root `<html>` element
+
+## Privacy
+
+All data stays local. See [Privacy Policy](/privacy) for full details.
 
 ---
-Developed with ❤️ by **Biagio**
+
+Developed by **Biagio**

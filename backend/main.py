@@ -1,107 +1,52 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from contextlib import asynccontextmanager
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional, Dict
+import logging
 import os
-import io
-import time
-import numpy as np
-from PIL import Image
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from contextlib import asynccontextmanager
 
-from backend.parser.logic import parse_search_query
-from backend.services.vinted import vinted_service
-from backend.storage.database import SessionLocal, init_db, Alert, FoundItem
-from backend.scheduler.engine import start_scheduler
-from backend.models import ProductResponse
 import uvicorn
-import re
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, limit: int = 10, window: int = 60, ban_threshold: int = 5):
-        super().__init__(app)
-        self.limit = limit
-        self.window = window
-        self.ban_threshold = ban_threshold
-        self.requests: Dict[str, List[float]] = {}
-        self.violations: Dict[str, int] = {}
-        self.banned_ips: Dict[str, float] = {}
+from backend.middleware.rate_limit import RateLimitMiddleware
+from backend.middleware.sanitizer import SanitizerMiddleware
+from backend.middleware.integrity import IntegrityMiddleware
+from backend.middleware.security import SecurityHeadersMiddleware
+from backend.routers import search, alerts, ocr
+from backend.storage.database import init_db
+from backend.scheduler.engine import start_scheduler
 
-    async def dispatch(self, request, call_next):
-        client_ip = request.client.host
-        now = time.time()
-        
-        if client_ip in self.banned_ips:
-            if now - self.banned_ips[client_ip] < 86400:
-                return JSONResponse(status_code=403, content={"detail": "IP Banned - Cyber Shield Active"})
-            else:
-                del self.banned_ips[client_ip]
-                self.violations[client_ip] = 0
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
-        if client_ip not in self.requests:
-            self.requests[client_ip] = []
-            
-        self.requests[client_ip] = [t for t in self.requests[client_ip] if now - t < self.window]
-        
-        if len(self.requests[client_ip]) >= self.limit:
-            self.violations[client_ip] = self.violations.get(client_ip, 0) + 1
-            if self.violations[client_ip] >= self.ban_threshold:
-                self.banned_ips[client_ip] = now
-                return JSONResponse(status_code=403, content={"detail": "IP Banned for 24h - Excessive Violations"})
-            return JSONResponse(status_code=429, content={"detail": "Too Many Requests - Radar Overload"})
-            
-        self.requests[client_ip].append(now)
-        return await call_next(request)
-
-class SanitizerMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        if request.method in ["POST", "PUT"]:
-            body = await request.body()
-            if body:
-                text = body.decode("utf-8", errors="ignore")
-                if re.search(r"<script|javascript:|on\w+=|union\s+select|insert\s+into", text, re.IGNORECASE):
-                    return JSONResponse(status_code=403, content={"detail": "Malicious Payload Blocked"})
-        return await call_next(request)
-
-class IntegrityMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        if request.url.path in ["/search", "/save-alert"]:
-            integrity = request.headers.get("X-Radar-Integrity")
-            if integrity != "secure-radar-v2":
-                return JSONResponse(status_code=403, content={"detail": "Unauthorized Access - Radar Guard Active"})
-        return await call_next(request)
-
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        csp_connect = " ".join([f"http://localhost:*" , f"https://*"])
-        response.headers["Content-Security-Policy"] = f"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*; connect-src 'self' {csp_connect};"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        return response
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Starting up — initialising DB and scheduler")
     init_db()
     start_scheduler()
     yield
+    logger.info("Shutting down")
+
 
 app = FastAPI(
-    title="Hunters Research Center API", 
+    title="Hunters Research Center API",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
+# ── Middleware (applied last-to-first) ────────────────────────────────────────
 app.add_middleware(RateLimitMiddleware, limit=20, window=60)
 app.add_middleware(IntegrityMiddleware)
 app.add_middleware(SanitizerMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+
+allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000",
+).split(",")
 
 app.add_middleware(
     CORSMiddleware,
@@ -111,135 +56,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_ocr_reader = None
-
-def get_ocr_reader():
-    global _ocr_reader
-    if _ocr_reader is None:
-        import easyocr
-        _ocr_reader = easyocr.Reader(['it', 'en'], gpu=False)
-    return _ocr_reader
-
-class SearchRequest(BaseModel):
-    query: str
-    min_price: Optional[float] = None
-    max_price: Optional[float] = None
-
-class AlertCreate(BaseModel):
-    query: str
-
-@app.post("/search")
-async def search(request: SearchRequest):
-    params = parse_search_query(request.query)
-
-    # Sidebar filters override parsed values when provided
-    effective_max = request.max_price if request.max_price is not None else params['max_price']
-    effective_min = request.min_price
-
-    vinted_results = await vinted_service.search(
-        keyword=params['keyword'],
-        max_price=effective_max,
-        condition=params['condition'],
-        min_price=effective_min
-    )
-
-    all_results = sorted(vinted_results, key=lambda x: x.raw_price)
-
-    return {
-        "params": params,
-        "results": [r.dict() for r in all_results]
-    }
-
-@app.post("/ocr")
-async def ocr_image(file: UploadFile = File(...)):
-    from PIL import ImageEnhance, ImageFilter
-
-    contents = await file.read()
-    image = Image.open(io.BytesIO(contents)).convert("RGB")
-
-    # Upscale — EasyOCR works best when long side ≥ 1200px
-    w, h = image.size
-    long_side = max(w, h)
-    if long_side < 1200:
-        scale = 1200 / long_side
-        image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-
-    # Sharpen then light contrast boost
-    image = image.filter(ImageFilter.SHARPEN)
-    image = ImageEnhance.Contrast(image).enhance(1.5)
-
-    img_array = np.array(image)
-
-    reader = get_ocr_reader()
-    # detail=1 returns (bbox, text, confidence) — use confidence to filter noise
-    raw = reader.readtext(img_array, detail=1, paragraph=False)
-
-    tokens = []
-    for (_bbox, text, conf) in raw:
-        if conf < 0.45:
-            continue
-        text = text.strip()
-        # Keep only alphanumeric + accented chars + spaces
-        clean = re.sub(r"[^a-zA-Z0-9àèéìòùÀÈÉÌÒÙ\s'-]", "", text).strip()
-        # Skip single chars and pure-digit short tokens (ratings, page numbers)
-        if len(clean) < 2:
-            continue
-        if re.fullmatch(r"\d{1,2}", clean):
-            continue
-        tokens.append(clean)
-
-    text = re.sub(r"\s{2,}", " ", " ".join(tokens)).strip()
-    return {"text": text}
-
-
-
-@app.post("/save-alert")
-async def save_alert(request: AlertCreate):
-    params = parse_search_query(request.query)
-    db = SessionLocal()
-    try:
-        new_alert = Alert(
-            query=request.query,
-            keyword=params['keyword'],
-            max_price=params['max_price'],
-            condition=params['condition']
-        )
-        db.add(new_alert)
-        db.commit()
-        return {"id": new_alert.id, "status": "active"}
-    finally:
-        db.close()
-
-@app.get("/alerts")
-async def get_alerts():
-    db = SessionLocal()
-    try:
-        alerts = db.query(Alert).all()
-        return alerts
-    finally:
-        db.close()
-
-@app.delete("/alerts/{alert_id}")
-async def delete_alert(alert_id: int):
-    db = SessionLocal()
-    try:
-        alert = db.query(Alert).filter(Alert.id == alert_id).first()
-        if not alert:
-            raise HTTPException(status_code=404, detail="Alert not found")
-        db.delete(alert)
-        db.commit()
-        return {"status": "removed"}
-    finally:
-        db.close()
-
-@app.get("/history")
-async def get_history():
-    db = SessionLocal()
-    try:
-        items = db.query(FoundItem).order_by(FoundItem.found_at.desc()).limit(50).all()
-        return items
-    finally:
-        db.close()
+# ── Routers ───────────────────────────────────────────────────────────────────
+app.include_router(search.router)
+app.include_router(alerts.router)
+app.include_router(ocr.router)
 
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

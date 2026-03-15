@@ -1,4 +1,4 @@
-import type { Product, Alert } from './types';
+import type { Product, Alert, MarketplaceInfo } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -9,11 +9,12 @@ const SECURE_HEADERS = {
 
 export async function search(
   query: string,
-  filters: { min_price?: number; max_price?: number } = {}
+  filters: { min_price?: number; max_price?: number; sources?: string[] } = {}
 ): Promise<{ results: Product[]; params: Record<string, unknown> }> {
   const body: Record<string, unknown> = { query };
   if (filters.min_price != null) body.min_price = filters.min_price;
   if (filters.max_price != null) body.max_price = filters.max_price;
+  if (filters.sources?.length) body.sources = filters.sources;
 
   const res = await fetch(`${API_BASE}/search`, {
     method: 'POST',
@@ -32,6 +33,12 @@ export async function ocr(file: File): Promise<string> {
   if (!res.ok) throw new Error(`OCR failed: ${res.status}`);
   const data = await res.json();
   return data.text ?? '';
+}
+
+export async function getSources(): Promise<MarketplaceInfo[]> {
+  const res = await fetch(`${API_BASE}/sources`);
+  if (!res.ok) return [];
+  return res.json();
 }
 
 export async function getAlerts(): Promise<Alert[]> {

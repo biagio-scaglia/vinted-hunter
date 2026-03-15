@@ -6,6 +6,13 @@ export interface Product {
   link: string;
   image?: string;
   condition?: string;
+  source: string;
+}
+
+export interface MarketplaceInfo {
+  name: string;
+  display_name: string;
+  color: string;
 }
 
 export interface Alert {
@@ -16,11 +23,12 @@ export interface Alert {
 
 export interface SearchResult {
   query: string;
-  ocrImage?: string;  // data URL when search was triggered via OCR
+  ocrImage?: string;
   results: Product[];
 }
 
 export interface Filters {
   min_price: string;
   max_price: string;
+  sources: string[];
 }

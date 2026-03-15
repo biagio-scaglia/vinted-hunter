@@ -6,6 +6,53 @@
   --background-end-rgb: 2, 2, 12;
 }
 
+/* ── Screen-reader only (WCAG) ───────────────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Skip navigation (WCAG 2.4.1) ───────────────────────────────────────────── */
+.skip-nav {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  z-index: 9999;
+  padding: 12px 20px;
+  background: #8b5cf6;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 1px;
+  border-radius: 0 0 8px 0;
+  text-decoration: none;
+  transition: top 0.15s;
+}
+.skip-nav:focus {
+  top: 0;
+}
+
+/* ── Focus visible (WCAG 2.4.7) ─────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* Suppress focus ring for mouse users on antd components */
+.ant-btn:focus:not(:focus-visible),
+.ant-input:focus:not(:focus-visible),
+.ant-checkbox-wrapper:focus:not(:focus-visible) {
+  outline: none;
+}
+
 body {
   color: rgb(var(--foreground-rgb));
   background: radial-gradient(circle at top center, #1e1b4b 0%, #020617 100%);
@@ -16,6 +63,7 @@ body {
   background: transparent !important;
 }
 
+/* ── Scrollbar ──────────────────────────────────────────────────────────────── */
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
 }
@@ -24,19 +72,26 @@ body {
   border-radius: 10px;
 }
 
+/* ── Cards ──────────────────────────────────────────────────────────────────── */
 .product-card-hover {
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+              box-shadow 0.35s ease;
 }
 .product-card-hover:hover {
-  transform: translateY(-10px) scale(1.02);
-  box-shadow: 0 20px 40px rgba(139, 92, 246, 0.15);
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(139, 92, 246, 0.18);
 }
 
-.chat-container {
-  max-width: 900px;
-  margin: 0 auto;
+/* ── Radar items ────────────────────────────────────────────────────────────── */
+.radar-item-hover {
+  transition: background 0.2s, border-color 0.2s;
+}
+.radar-item-hover:hover {
+  background: rgba(139, 92, 246, 0.1) !important;
+  border-color: rgba(139, 92, 246, 0.25) !important;
 }
 
+/* ── Footer ─────────────────────────────────────────────────────────────────── */
 .made-by {
   font-size: 11px;
   color: #a78bfa;
@@ -49,24 +104,64 @@ body {
   text-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
 }
 
-.radar-item-hover {
-  transition: background 0.2s, border-color 0.2s;
-}
-.radar-item-hover:hover {
-  background: rgba(139, 92, 246, 0.1) !important;
-  border-color: rgba(139, 92, 246, 0.25) !important;
+/* ── Results grid ────────────────────────────────────────────────────────────── */
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
 }
 
-/* Show burger button on small screens */
+/* ── Main content padding ────────────────────────────────────────────────────── */
+.main-content {
+  padding: 28px 32px;
+}
+
+/* ── Show burger on small screens ────────────────────────────────────────────── */
 @media (max-width: 991px) {
   .mobile-burger {
     display: flex !important;
   }
+  .desktop-logo {
+    display: none !important;
+  }
+  .main-content {
+    padding: 16px !important;
+  }
 }
 
-/* Responsive grid fallback */
+/* ── Tighter grid on small screens ──────────────────────────────────────────── */
 @media (max-width: 600px) {
   .results-grid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+    gap: 12px !important;
+  }
+  .stats-bar {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+  .stats-figures {
+    gap: 20px !important;
+  }
+  .ocr-banner {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+  .ocr-banner img {
+    width: 100% !important;
+    height: 120px !important;
+  }
+  .search-btn-text {
+    display: none !important;
+  }
+}
+
+/* ── Landing responsive ──────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .landing-title {
+    font-size: 28px !important;
+    letter-spacing: 4px !important;
+  }
+  .landing-icon {
+    font-size: 56px !important;
   }
 }

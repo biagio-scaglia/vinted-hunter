@@ -1,38 +1,59 @@
-import asyncio
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from backend.services.vinted import vinted_service
-from backend.storage.database import SessionLocal, Alert, FoundItem
-from datetime import datetime
+import logging
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+from backend.services.registry import get as get_service
+from backend.storage.database import SessionLocal, Alert, FoundItem
+
+logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
-async def check_alerts():
+
+async def check_alerts() -> None:
+    logger.info("Scheduler: running alert check")
     db = SessionLocal()
     try:
         alerts = db.query(Alert).all()
         for alert in alerts:
-            results = await vinted_service.search(
-                keyword=alert.keyword, 
-                max_price=alert.max_price
-            )
-            
-            for item in results:
-                existing = db.query(FoundItem).filter(FoundItem.vinted_id == str(item.id)).first()
-                if not existing:
-                    db.add(FoundItem(
-                        alert_id=alert.id,
-                        vinted_id=str(item.id),
-                        title=item.title,
-                        price=item.price,
-                        link=item.link
-                    ))
-            db.commit()
-                    
+            try:
+                vinted = get_service("vinted")
+                if not vinted:
+                    continue
+                results = await vinted.search(
+                    keyword=alert.keyword,
+                    max_price=alert.max_price,
+                )
+                new_count = 0
+                for item in results:
+                    exists = (
+                        db.query(FoundItem)
+                        .filter(FoundItem.vinted_id == str(item.id))
+                        .first()
+                    )
+                    if not exists:
+                        db.add(
+                            FoundItem(
+                                alert_id=alert.id,
+                                vinted_id=str(item.id),
+                                title=item.title,
+                                price=item.price,
+                                link=item.link,
+                            )
+                        )
+                        new_count += 1
+                db.commit()
+                if new_count:
+                    logger.info("Alert %d (%r): %d new item(s)", alert.id, alert.keyword, new_count)
+            except Exception:
+                logger.exception("Error processing alert %d (%r)", alert.id, alert.keyword)
+                db.rollback()
     except Exception:
-        pass
+        logger.exception("Fatal error in check_alerts")
     finally:
         db.close()
 
-def start_scheduler():
-    scheduler.add_job(check_alerts, 'interval', minutes=10)
+
+def start_scheduler() -> None:
+    scheduler.add_job(check_alerts, "interval", minutes=10, id="check_alerts")
     scheduler.start()
+    logger.info("Scheduler started (interval: 10 min)")
