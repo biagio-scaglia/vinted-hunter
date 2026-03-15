@@ -1,10 +1,13 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 import os
+import io
 import time
+import numpy as np
+from PIL import Image
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
@@ -108,8 +111,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_ocr_reader = None
+
+def get_ocr_reader():
+    global _ocr_reader
+    if _ocr_reader is None:
+        import easyocr
+        _ocr_reader = easyocr.Reader(['it', 'en'], gpu=False)
+    return _ocr_reader
+
 class SearchRequest(BaseModel):
     query: str
+    min_price: Optional[float] = None
+    max_price: Optional[float] = None
 
 class AlertCreate(BaseModel):
     query: str
@@ -117,19 +131,36 @@ class AlertCreate(BaseModel):
 @app.post("/search")
 async def search(request: SearchRequest):
     params = parse_search_query(request.query)
-    
+
+    # Sidebar filters override parsed values when provided
+    effective_max = request.max_price if request.max_price is not None else params['max_price']
+    effective_min = request.min_price
+
     vinted_results = await vinted_service.search(
         keyword=params['keyword'],
-        max_price=params['max_price'],
-        condition=params['condition']
+        max_price=effective_max,
+        condition=params['condition'],
+        min_price=effective_min
     )
-    
+
     all_results = sorted(vinted_results, key=lambda x: x.raw_price)
-    
+
     return {
         "params": params,
         "results": [r.dict() for r in all_results]
     }
+
+@app.post("/ocr")
+async def ocr_image(file: UploadFile = File(...)):
+    contents = await file.read()
+    image = Image.open(io.BytesIO(contents)).convert("RGB")
+    img_array = np.array(image)
+
+    reader = get_ocr_reader()
+    results = reader.readtext(img_array, detail=0, paragraph=True)
+
+    text = " ".join(results).strip()
+    return {"text": text}
 
 
 

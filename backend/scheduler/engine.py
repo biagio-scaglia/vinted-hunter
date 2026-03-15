@@ -16,20 +16,17 @@ async def check_alerts():
                 max_price=alert.max_price
             )
             
-            if results:
-                cheapest = results[0]
-                existing = db.query(FoundItem).filter(FoundItem.vinted_id == str(cheapest.id)).first()
-                
+            for item in results:
+                existing = db.query(FoundItem).filter(FoundItem.vinted_id == str(item.id)).first()
                 if not existing:
-                    new_item = FoundItem(
+                    db.add(FoundItem(
                         alert_id=alert.id,
-                        vinted_id=str(cheapest.id),
-                        title=cheapest.title,
-                        price=cheapest.price,
-                        link=cheapest.link
-                    )
-                    db.add(new_item)
-                    db.commit()
+                        vinted_id=str(item.id),
+                        title=item.title,
+                        price=item.price,
+                        link=item.link
+                    ))
+            db.commit()
                     
     except Exception:
         pass

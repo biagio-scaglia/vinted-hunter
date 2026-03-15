@@ -21,7 +21,7 @@ class VintedService:
             except Exception as e:
                 pass
 
-    async def search(self, keyword: str, max_price: Optional[float] = None, condition: Optional[str] = None) -> List[ProductResponse]:
+    async def search(self, keyword: str, max_price: Optional[float] = None, condition: Optional[str] = None, min_price: Optional[float] = None) -> List[ProductResponse]:
         if not self.cookies:
             await self._fetch_cookies()
 
@@ -56,6 +56,8 @@ class VintedService:
                         currency = item.get('currency', '€')
 
                     if max_price and price > max_price:
+                        continue
+                    if min_price and price < min_price:
                         continue
                         
                     results.append(ProductResponse(

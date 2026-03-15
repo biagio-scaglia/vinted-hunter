@@ -27,7 +27,9 @@ class FoundItem(Base):
     found_at = Column(DateTime, default=datetime.datetime.utcnow)
     alert = relationship("Alert", back_populates="found_items")
 
-engine = create_engine('sqlite:///c:/Users/biagio.scaglia/Desktop/vinted/backend/vinted_hunter.db')
+from pathlib import Path
+_db_path = Path(__file__).parent.parent / "vinted_hunter.db"
+engine = create_engine(f"sqlite:///{_db_path}")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():

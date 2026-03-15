@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+httpx
+sqlalchemy
+apscheduler
+regex
+easyocr
+pillow
+numpy
+python-multipart
