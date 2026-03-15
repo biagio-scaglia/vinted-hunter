@@ -48,3 +48,25 @@ body {
   opacity: 0.8;
   text-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
 }
+
+.radar-item-hover {
+  transition: background 0.2s, border-color 0.2s;
+}
+.radar-item-hover:hover {
+  background: rgba(139, 92, 246, 0.1) !important;
+  border-color: rgba(139, 92, 246, 0.25) !important;
+}
+
+/* Show burger button on small screens */
+@media (max-width: 991px) {
+  .mobile-burger {
+    display: flex !important;
+  }
+}
+
+/* Responsive grid fallback */
+@media (max-width: 600px) {
+  .results-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important;
+  }
+}

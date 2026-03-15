@@ -1,170 +1,182 @@
 "use client";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   App,
   Layout,
   Input,
   Button,
-  Card,
   Avatar,
   Typography,
-  Space,
   Spin,
   Drawer,
   ConfigProvider,
   theme,
   Tooltip,
+  Tag,
+  Empty,
 } from 'antd';
 import Link from 'next/link';
 import {
-  SendOutlined,
   SearchOutlined,
-  HistoryOutlined,
   MenuOutlined,
   ThunderboltOutlined,
   ShoppingOutlined,
   NotificationOutlined,
   CameraOutlined,
   LoadingOutlined,
+  RadarChartOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
-import ProductCard, { Product } from './components/ProductCard';
-import Sidebar, { Alert } from './components/Sidebar';
 
-const { Header, Content, Footer } = Layout;
+import ProductCard from './components/ProductCard';
+import Sidebar from './components/Sidebar';
+import * as api from '@/lib/api';
+import type { Product, Alert, Filters, SearchResult } from '@/lib/types';
+
+const { Header, Content, Sider } = Layout;
 const { Title, Text, Paragraph } = Typography;
 
-interface Message {
-  id: string;
-  type: 'user' | 'ai';
-  text: string;
-  results?: Product[];
-  image?: string;       // data URL when message originated from OCR upload
-  isOcr?: boolean;      // suppress "MONITORA" button on OCR messages
+// ─── Colour palette ───────────────────────────────────────────────────────────
+const C = {
+  bg: '#020212',
+  surface: '#0a0a1f',
+  surfaceAlt: '#0f0f2d',
+  border: 'rgba(139,92,246,0.12)',
+  primary: '#8b5cf6',
+  primaryDark: '#7c3aed',
+  text: '#e2e8f0',
+  muted: 'rgba(255,255,255,0.35)',
+} as const;
+
+// ─── OCR image preview banner ─────────────────────────────────────────────────
+function OcrBanner({ imageUrl, query }: { imageUrl: string; query: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px 20px', background: 'rgba(139,92,246,0.07)', border: `1px solid ${C.border}`, borderRadius: '16px', marginBottom: '24px' }}>
+      <img src={imageUrl} alt="OCR" style={{ width: '80px', height: '60px', objectFit: 'cover', borderRadius: '10px', flexShrink: 0 }} />
+      <div>
+        <Text style={{ color: C.primary, fontSize: '10px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' }}>Testo estratto via OCR</Text>
+        <Paragraph ellipsis={{ rows: 2 }} style={{ margin: 0, color: C.text, fontSize: '13px', marginTop: '4px' }}>{query}</Paragraph>
+      </div>
+    </div>
+  );
 }
 
-// ─── Inner app: uses App.useApp() for proper themed notifications ──────────────
-function MainApp() {
-  const { notification } = App.useApp();
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// ─── Stats strip ──────────────────────────────────────────────────────────────
+function StatsBar({ results, query, onSaveAlert }: { results: Product[]; query: string; onSaveAlert: () => void }) {
+  const min = results[0]?.price ?? '—';
+  const max = results[results.length - 1]?.price ?? '—';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '24px', padding: '14px 20px', background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: '32px', flex: 1 }}>
+        <Stat label="Risultati" value={String(results.length)} />
+        <Stat label="Prezzo min" value={min} />
+        <Stat label="Prezzo max" value={max} />
+      </div>
+      <Tooltip title="Attiva monitoraggio automatico per questa ricerca">
+        <Button
+          size="small"
+          icon={<PlusOutlined />}
+          onClick={onSaveAlert}
+          style={{ background: 'rgba(139,92,246,0.12)', border: `1px solid rgba(139,92,246,0.3)`, color: C.primary, borderRadius: '8px', fontWeight: 700, fontSize: '11px' }}
+        >
+          MONITORA
+        </Button>
+      </Tooltip>
+    </div>
+  );
+}
 
-  const [messages, setMessages] = useState<Message[]>([
-    { id: '1', type: 'ai', text: 'Radar Pro attivo. Pronto per una nuova scansione.' }
-  ]);
-  const [showChat, setShowChat] = useState(false);
-  const [filters, setFilters] = useState({ min_price: '', max_price: '' });
-  const [input, setInput] = useState('');
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div style={{ color: C.muted, fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px' }}>{label}</div>
+      <div style={{ color: '#fff', fontWeight: 900, fontSize: '18px', lineHeight: 1.2 }}>{value}</div>
+    </div>
+  );
+}
+
+// ─── Empty state ──────────────────────────────────────────────────────────────
+function EmptyState() {
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 24px', gap: '16px' }}>
+      <RadarChartOutlined style={{ fontSize: '64px', color: 'rgba(139,92,246,0.25)' }} />
+      <Text style={{ color: C.muted, fontSize: '15px' }}>Inserisci un termine di ricerca o carica un&apos;immagine</Text>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center', marginTop: '8px' }}>
+        {['Nintendo DS', 'Lego Technic', 'Air Jordan', 'PS5'].map(q => (
+          <Tag key={q} style={{ background: 'rgba(139,92,246,0.08)', border: `1px solid ${C.border}`, color: C.primary, cursor: 'pointer', borderRadius: '20px', padding: '2px 12px' }}>
+            {q}
+          </Tag>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Dashboard (main state holder) ───────────────────────────────────────────
+function Dashboard() {
+  const { notification } = App.useApp();
+
+  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
+  const [query, setQuery] = useState('');
   const [honey, setHoney] = useState('');
   const [loading, setLoading] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [filters, setFilters] = useState<Filters>({ min_price: '', max_price: '' });
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchAlerts = useCallback(async () => {
+    try { setAlerts(await api.getAlerts()); } catch (_) {}
+  }, []);
 
   useEffect(() => {
     fetchAlerts();
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setNotificationsEnabled(Notification.permission === 'granted');
     }
-  }, []);
+  }, [fetchAlerts]);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-    }
-  }, [messages, loading]);
-
-  const fetchAlerts = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/alerts`);
-      if (res.ok) setAlerts(await res.json());
-    } catch (_) {}
-  };
-
-  const requestNotifications = () => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      Notification.requestPermission().then(permission => {
-        if (permission === 'granted') {
-          setNotificationsEnabled(true);
-          notification.success({ title: 'Radar Notifiche Attivato', description: 'Riceverai un allerta non appena il radar intercetta un affare!' });
-        }
-      });
-    }
-  };
-
-  const handleSend = async (text: string = input, imageUrl?: string) => {
+  const handleSearch = useCallback(async (text: string = query, ocrImage?: string) => {
     if (!text.trim() || loading || honey) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      type: 'user',
-      text,
-      image: imageUrl,
-      isOcr: !!imageUrl,
-    };
-    setMessages(prev => [...prev, userMessage]);
-    if (text === input) setInput('');
+    setQuery(text);
     setLoading(true);
-
-    const body: Record<string, unknown> = { query: text };
-    if (filters.min_price) body.min_price = parseFloat(filters.min_price);
-    if (filters.max_price) body.max_price = parseFloat(filters.max_price);
-
     try {
-      const res = await fetch(`${API_BASE}/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Radar-Integrity': 'secure-radar-v2' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        type: 'ai',
-        text: data.results?.length > 0
-          ? `Ho trovato ${data.results.length} articoli per te.`
-          : 'Purtroppo non ho trovato nulla per questa ricerca.',
-        results: data.results,
-      }]);
+      const parsed = filters.min_price || filters.max_price
+        ? { min_price: filters.min_price ? parseFloat(filters.min_price) : undefined, max_price: filters.max_price ? parseFloat(filters.max_price) : undefined }
+        : {};
+      const data = await api.search(text, parsed);
+      setSearchResult({ query: text, ocrImage, results: data.results ?? [] });
     } catch {
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        type: 'ai',
-        text: "Spiacente, c'è stato un errore nel caricamento dei dati.",
-      }]);
+      notification.error({ title: 'Errore', description: 'Impossibile completare la ricerca.' });
     } finally {
       setLoading(false);
     }
-  };
+  }, [query, filters, honey, loading, notification]);
 
-  const handleOcrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleOcrUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (fileInputRef.current) fileInputRef.current.value = '';
 
     setOcrLoading(true);
-
-    // Read image as data URL for preview in chat
     const imageDataUrl = await new Promise<string>((resolve) => {
       const reader = new FileReader();
       reader.onload = (ev) => resolve(ev.target?.result as string);
       reader.readAsDataURL(file);
     });
 
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-      const res = await fetch(`${API_BASE}/ocr`, { method: 'POST', body: formData });
-      const data = await res.json();
-
-      if (data.text) {
+      const text = await api.ocr(file);
+      if (text) {
+        setQuery(text);
         notification.success({
           title: 'OCR completato',
-          description: `Testo estratto: "${data.text.slice(0, 80)}${data.text.length > 80 ? '...' : ''}"`,
+          description: `"${text.slice(0, 70)}${text.length > 70 ? '...' : ''}"`,
         });
-        // Auto-search with the extracted text, attaching the image preview
-        await handleSend(data.text, imageDataUrl);
+        await handleSearch(text, imageDataUrl);
       } else {
         notification.warning({ title: "Nessun testo trovato nell'immagine" });
       }
@@ -173,243 +185,253 @@ function MainApp() {
     } finally {
       setOcrLoading(false);
     }
-  };
+  }, [handleSearch, notification]);
 
-  const saveAlert = async (query: string) => {
+  const handleSaveAlert = useCallback(async () => {
+    if (!searchResult?.query) return;
     try {
-      await fetch(`${API_BASE}/save-alert`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Radar-Integrity': 'secure-radar-v2' },
-        body: JSON.stringify({ query }),
+      await api.saveAlert(searchResult.query);
+      await fetchAlerts();
+      notification.success({ title: 'Radar attivato', description: `Monitoraggio attivo per "${searchResult.query}"` });
+    } catch {
+      notification.error({ title: 'Errore', description: 'Impossibile salvare il monitoraggio.' });
+    }
+  }, [searchResult, fetchAlerts, notification]);
+
+  const handleAlertClick = useCallback((alertQuery: string) => {
+    setDrawerOpen(false);
+    handleSearch(alertQuery);
+  }, [handleSearch]);
+
+  const handleAlertDelete = useCallback(async (id: number) => {
+    try {
+      await api.deleteAlert(id);
+      await fetchAlerts();
+    } catch (_) {}
+  }, [fetchAlerts]);
+
+  const requestNotifications = () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      Notification.requestPermission().then(p => {
+        if (p === 'granted') {
+          setNotificationsEnabled(true);
+          notification.success({ title: 'Notifiche attivate' });
+        }
       });
-      fetchAlerts();
-    } catch (err) { console.error(err); }
+    }
   };
 
-  const deleteAlert = async (id: number) => {
-    try {
-      await fetch(`${API_BASE}/alerts/${id}`, { method: 'DELETE' });
-      fetchAlerts();
-    } catch (err) { console.error(err); }
-  };
+  const sidebarContent = (
+    <Sidebar
+      alerts={alerts}
+      filters={filters}
+      onFilterChange={setFilters}
+      onAlertClick={handleAlertClick}
+      onAlertDelete={handleAlertDelete}
+    />
+  );
 
-  // ── Landing screen ─────────────────────────────────────────────────────────
-  if (!showChat) {
-    return (
-      <Layout style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'radial-gradient(circle at center, #1e1b4b 0%, #020212 100%)' }}>
-        <div style={{ textAlign: 'center', maxWidth: '600px', padding: '0 24px' }}>
-          <div style={{ marginBottom: '40px' }}>
-            <ThunderboltOutlined style={{ fontSize: '80px', color: '#8b5cf6', filter: 'drop-shadow(0 0 20px rgba(139, 92, 246, 0.5))' }} />
-          </div>
-          <Title style={{ color: '#fff', letterSpacing: '8px', fontSize: '42px', fontWeight: 900 }}>VINTED HUNTER</Title>
-          <Title level={4} style={{ color: '#a78bfa', fontWeight: 300, letterSpacing: '2px', marginBottom: '40px' }}>PRO RESEARCH CENTER</Title>
-          <Paragraph style={{ color: '#94a3b8', fontSize: '16px', lineHeight: '1.8', marginBottom: '48px' }}>
-            Benvenuto nel sistema di ricerca e monitoraggio industriale.
-            Analizza il mercato in tempo reale con precisione millimetrica.
-          </Paragraph>
-          <Button
-            type="primary"
-            size="large"
-            block
-            style={{ height: '70px', borderRadius: '35px', fontWeight: 900, fontSize: '18px', letterSpacing: '2px', boxShadow: '0 0 40px rgba(139, 92, 246, 0.4)' }}
-            onClick={() => setShowChat(true)}
-          >
-            ENTRA NEL RADAR
-          </Button>
-          <div style={{ marginTop: '60px' }}>
-            <Text style={{ fontSize: '11px', color: 'rgba(167, 139, 250, 0.4)', letterSpacing: '3px' }}>MADE BY BIAGIO</Text>
+  return (
+    <Layout style={{ minHeight: '100vh' }}>
+      {/* Desktop sidebar */}
+      <Sider
+        width={260}
+        style={{ background: C.surface, borderRight: `1px solid ${C.border}`, overflow: 'hidden', position: 'sticky', top: 0, height: '100vh' }}
+        breakpoint="lg"
+        collapsedWidth={0}
+        trigger={null}
+      >
+        <div style={{ padding: '20px', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <ThunderboltOutlined style={{ color: C.primary, fontSize: '18px' }} />
+            <Title level={5} style={{ margin: 0, color: '#fff', fontSize: '13px', letterSpacing: '2px', fontWeight: 900 }}>VINTED HUNTER</Title>
           </div>
         </div>
-      </Layout>
-    );
-  }
+        {sidebarContent}
+      </Sider>
 
-  // ── Main chat UI ───────────────────────────────────────────────────────────
-  return (
-    <Layout style={{ minHeight: '100vh', background: 'transparent' }}>
+      {/* Mobile drawer */}
       <Drawer
-        title={<Text strong style={{ color: '#fff', letterSpacing: '2px', fontSize: '12px' }}><ThunderboltOutlined style={{ color: '#8b5cf6' }} /> HUNTER RADAR</Text>}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
         placement="left"
-        onClose={() => setSidebarOpen(false)}
-        open={sidebarOpen}
-        size="default"
-        styles={{
-          body: { padding: 0, background: '#0a0a1f' },
-          header: { background: '#0a0a1f', borderBottom: '1px solid rgba(139, 92, 246, 0.1)' }
-        }}
-        closeIcon={<MenuOutlined style={{ color: '#fff' }} />}
+        width={280}
+        styles={{ body: { padding: 0, background: C.surface }, header: { background: C.surface, borderBottom: `1px solid ${C.border}` } }}
+        title={<Text style={{ color: '#fff', fontSize: '12px', letterSpacing: '2px' }}><ThunderboltOutlined style={{ color: C.primary }} /> HUNTER RADAR</Text>}
       >
-        <Sidebar
-          alerts={alerts}
-          filters={filters}
-          onFilterChange={setFilters}
-          onAlertClick={(q) => { handleSend(q); setSidebarOpen(false); }}
-          onAlertDelete={deleteAlert}
-          onClearChat={() => setMessages([{ id: 'reset', type: 'ai', text: 'Ciao! Pronto per una nuova ricerca.' }])}
-        />
+        {sidebarContent}
       </Drawer>
 
       <Layout>
-        {/* Header */}
-        <Header style={{ background: 'rgba(10, 10, 31, 0.7)', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(139, 92, 246, 0.1)', backdropFilter: 'blur(15px)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <Button type="text" icon={<MenuOutlined style={{ fontSize: '20px', color: '#8b5cf6' }} />} onClick={() => setSidebarOpen(true)} />
-            <Title level={5} style={{ margin: 0, color: '#fff', letterSpacing: '2px', fontWeight: 900, fontSize: '12px' }}>RESEARCH CENTER</Title>
+        {/* Sticky header */}
+        <Header style={{
+          background: 'rgba(10,10,31,0.85)',
+          backdropFilter: 'blur(20px)',
+          borderBottom: `1px solid ${C.border}`,
+          padding: '0 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
+          height: '64px',
+        }}>
+          {/* Burger (mobile) */}
+          <Button
+            type="text"
+            icon={<MenuOutlined style={{ color: C.primary }} />}
+            onClick={() => setDrawerOpen(true)}
+            style={{ display: 'none' }}
+            className="mobile-burger"
+          />
+
+          {/* Search bar — centre */}
+          <div style={{ flex: 1, display: 'flex', gap: '0' }}>
+            {/* hidden honeypot */}
+            <div style={{ display: 'none' }}>
+              <input type="text" value={honey} onChange={e => setHoney(e.target.value)} tabIndex={-1} autoComplete="off" />
+            </div>
+            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleOcrUpload} />
+
+            <Input
+              size="large"
+              placeholder="Cerca su Vinted..."
+              prefix={<SearchOutlined style={{ color: C.primary }} />}
+              suffix={
+                <Tooltip title={ocrLoading ? 'OCR in corso...' : 'Carica immagine (OCR)'}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={ocrLoading ? <LoadingOutlined style={{ color: C.primary }} /> : <CameraOutlined style={{ color: C.primary }} />}
+                    disabled={ocrLoading}
+                    onClick={() => fileInputRef.current?.click()}
+                  />
+                </Tooltip>
+              }
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onPressEnter={() => handleSearch()}
+              style={{ borderRadius: '12px 0 0 12px', height: '44px', background: 'rgba(255,255,255,0.05)', border: `1px solid ${C.border}`, color: '#fff' }}
+            />
+            <Button
+              type="primary"
+              size="large"
+              loading={loading}
+              icon={!loading && <SearchOutlined />}
+              onClick={() => handleSearch()}
+              style={{ height: '44px', borderRadius: '0 12px 12px 0', background: C.primaryDark, fontWeight: 900, paddingInline: '20px' }}
+            >
+              CERCA
+            </Button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+
+          {/* Right actions */}
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
             {!notificationsEnabled && (
-              <Button type="text" icon={<NotificationOutlined style={{ color: '#8b5cf6' }} />} onClick={requestNotifications} />
+              <Tooltip title="Attiva notifiche push">
+                <Button type="text" icon={<NotificationOutlined style={{ color: C.primary }} />} onClick={requestNotifications} />
+              </Tooltip>
             )}
-            <Avatar style={{ backgroundColor: '#8b5cf6', boxShadow: '0 0 20px rgba(139, 92, 246, 0.5)' }} icon={<ShoppingOutlined style={{ color: '#fff' }} />} />
+            <Avatar style={{ background: C.primaryDark, boxShadow: `0 0 16px rgba(139,92,246,0.4)`, cursor: 'default' }} icon={<ShoppingOutlined />} />
           </div>
         </Header>
 
-        <Content style={{ padding: '24px', display: 'flex', flexDirection: 'column' }}>
-          {/* Messages */}
-          <div ref={scrollRef} className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', paddingBottom: '24px' }}>
-            <div className="chat-container">
-              {messages.map((m) => (
-                <div key={m.id} style={{ marginBottom: '40px', display: 'flex', flexDirection: 'column', alignItems: m.type === 'user' ? 'flex-end' : 'flex-start' }}>
-                  <div style={{
-                    maxWidth: '85%', padding: '24px 30px', borderRadius: '28px',
-                    backgroundColor: m.type === 'user' ? '#7c3aed' : '#1e1b4b',
-                    color: m.type === 'user' ? '#fff' : '#e2e8f0',
-                    boxShadow: m.type === 'user' ? '0 10px 40px rgba(124, 58, 237, 0.3)' : '0 10px 30px rgba(0,0,0,0.3)',
-                    border: m.type === 'user' ? 'none' : '1px solid rgba(139, 92, 246, 0.1)', fontWeight: 500
-                  }}>
-                    {/* Image preview for OCR messages */}
-                    {m.image && (
-                      <img
-                        src={m.image}
-                        alt="Immagine caricata"
-                        style={{ maxWidth: '240px', maxHeight: '180px', objectFit: 'cover', borderRadius: '12px', marginBottom: '12px', display: 'block' }}
-                      />
-                    )}
+        {/* Main content */}
+        <Content className="custom-scrollbar" style={{ padding: '28px 32px', overflowY: 'auto', minHeight: 0 }}>
+          <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
 
-                    <Paragraph style={{ margin: 0, color: 'inherit', fontSize: '15.5px', lineHeight: '1.7' }}>{m.text}</Paragraph>
+            {/* OCR preview */}
+            {searchResult?.ocrImage && (
+              <OcrBanner imageUrl={searchResult.ocrImage} query={searchResult.query} />
+            )}
 
-                    {/* Results grid */}
-                    {m.results && m.results.length > 0 && (
-                      <div style={{ marginTop: '20px' }}>
-                        <Card style={{ background: 'rgba(139, 92, 246, 0.05)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRadius: '24px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                            <Text style={{ color: '#a78bfa', fontWeight: 900, letterSpacing: '2px', fontSize: '11px' }}><ThunderboltOutlined /> MARKET ANALYTICS</Text>
-                          </div>
-                          <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap' }}>
-                            <div>
-                              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', textTransform: 'uppercase' }}>Prezzo Min</div>
-                              <div style={{ color: '#fff', fontSize: '24px', fontWeight: 900 }}>{m.results[0].price}</div>
-                            </div>
-                            <div>
-                              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', textTransform: 'uppercase' }}>Tot. Risultati</div>
-                              <div style={{ color: '#fff', fontSize: '24px', fontWeight: 900 }}>{m.results.length}</div>
-                            </div>
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', textTransform: 'uppercase', marginBottom: '8px' }}>Distribuzione Prezzo</div>
-                              <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', position: 'relative' }}>
-                                <div style={{ position: 'absolute', left: '0', width: '30%', height: '100%', background: '#7c3aed', borderRadius: '4px', boxShadow: '0 0 10px #7c3aed' }} />
-                              </div>
-                            </div>
-                          </div>
-                        </Card>
-                        <div style={{ marginTop: '28px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '24px' }}>
-                          {m.results.map((p) => <ProductCard key={p.id} product={p} />)}
-                        </div>
-                      </div>
-                    )}
+            {/* Stats bar */}
+            {searchResult && searchResult.results.length > 0 && (
+              <StatsBar results={searchResult.results} query={searchResult.query} onSaveAlert={handleSaveAlert} />
+            )}
 
-                    {/* Monitor button — only for real text searches */}
-                    {m.type === 'user' && !m.isOcr && (
-                      <Button
-                        size="small"
-                        type="primary"
-                        style={{ background: '#020212', border: 'none', color: '#a78bfa', marginTop: '16px', fontSize: '11px', borderRadius: '10px', fontWeight: 700, boxShadow: '0 0 15px rgba(139,92,246,0.3)' }}
-                        onClick={() => saveAlert(m.text)}
-                      >
-                        MONITORA QUESTA RICERCA
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {loading && (
-                <div style={{ display: 'flex', gap: '14px', padding: '12px', alignItems: 'center' }}>
-                  <Spin size="small" style={{ color: '#8b5cf6' }} />
-                  <Text italic style={{ color: '#94a3b8', fontSize: '13px' }}>Neural radar activated... searching nebula.</Text>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Input bar */}
-          <div style={{ padding: '24px 0' }}>
-            <div className="chat-container">
-              {/* honeypot anti-bot */}
-              <div style={{ display: 'none' }}>
-                <input type="text" value={honey} onChange={(e) => setHoney(e.target.value)} tabIndex={-1} autoComplete="off" />
+            {/* Loading */}
+            {loading && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', padding: '80px 0' }}>
+                <Spin size="large" />
+                <Text style={{ color: C.muted }}>Scansione in corso...</Text>
               </div>
+            )}
 
-              {/* hidden file input for OCR */}
-              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleOcrUpload} />
+            {/* No results */}
+            {!loading && searchResult && searchResult.results.length === 0 && (
+              <Empty
+                description={<Text style={{ color: C.muted }}>Nessun risultato per &ldquo;{searchResult.query}&rdquo;</Text>}
+                style={{ padding: '80px 0' }}
+              />
+            )}
 
-              <Space.Compact style={{ width: '100%', boxShadow: '0 15px 50px rgba(139,92,246,0.2)' }}>
-                <Tooltip title={ocrLoading ? 'Analisi in corso...' : 'Carica immagine per OCR'}>
-                  <Button
-                    size="large"
-                    icon={ocrLoading ? <LoadingOutlined /> : <CameraOutlined />}
-                    disabled={ocrLoading}
-                    onClick={() => fileInputRef.current?.click()}
-                    style={{ height: '60px', background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRight: 'none', color: '#8b5cf6', borderRadius: '20px 0 0 20px' }}
-                  />
-                </Tooltip>
-                <Input
-                  size="large"
-                  placeholder="Sintonizza il radar..."
-                  style={{ border: '1px solid rgba(139, 92, 246, 0.2)', height: '60px', fontSize: '16px', color: '#fff', borderRadius: '0' }}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onPressEnter={() => handleSend()}
-                  prefix={<SearchOutlined style={{ color: '#8b5cf6' }} />}
-                />
-                <Button
-                  size="large"
-                  type="primary"
-                  icon={<SendOutlined />}
-                  onClick={() => handleSend()}
-                  loading={loading}
-                  style={{ width: '130px', borderRadius: '0 20px 20px 0', height: '60px', fontWeight: 900, fontSize: '14px', background: '#7c3aed' }}
-                >
-                  CERCA
-                </Button>
-              </Space.Compact>
-            </div>
+            {/* Empty initial state */}
+            {!loading && !searchResult && <EmptyState />}
+
+            {/* Results grid */}
+            {!loading && searchResult && searchResult.results.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>
+                {searchResult.results.map(p => <ProductCard key={p.id} product={p} />)}
+              </div>
+            )}
           </div>
-        </Content>
 
-        <Footer style={{ textAlign: 'center', padding: '20px 24px', background: 'transparent' }}>
-          <Space size="middle" style={{ marginBottom: '16px' }}>
-            <Link href="/privacy"><Text style={{ color: 'rgba(167, 139, 250, 0.4)', fontSize: '10px', cursor: 'pointer' }}>PRIVACY POLICY</Text></Link>
-            <Link href="/terms"><Text style={{ color: 'rgba(167, 139, 250, 0.4)', fontSize: '10px', cursor: 'pointer' }}>TERMS OF SERVICE</Text></Link>
-          </Space>
-          <div className="made-by">MADE WITH ❤️ BY BIAGIO</div>
-        </Footer>
+          <footer style={{ textAlign: 'center', padding: '40px 0 20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginBottom: '12px' }}>
+              <Link href="/privacy"><Text style={{ color: C.muted, fontSize: '10px', letterSpacing: '1px' }}>PRIVACY POLICY</Text></Link>
+              <Link href="/terms"><Text style={{ color: C.muted, fontSize: '10px', letterSpacing: '1px' }}>TERMS OF SERVICE</Text></Link>
+            </div>
+            <div className="made-by">MADE WITH ❤️ BY BIAGIO</div>
+          </footer>
+        </Content>
       </Layout>
     </Layout>
   );
 }
 
-// ─── Root: ConfigProvider + App wrapper ──────────────────────────────────────
+// ─── Landing page ─────────────────────────────────────────────────────────────
+function Landing({ onEnter }: { onEnter: () => void }) {
+  return (
+    <Layout style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'radial-gradient(circle at center, #1e1b4b 0%, #020212 100%)' }}>
+      <div style={{ textAlign: 'center', maxWidth: '600px', padding: '0 24px' }}>
+        <ThunderboltOutlined style={{ fontSize: '80px', color: C.primary, filter: 'drop-shadow(0 0 24px rgba(139,92,246,0.5))', marginBottom: '32px', display: 'block' }} />
+        <Title style={{ color: '#fff', letterSpacing: '8px', fontSize: '40px', fontWeight: 900, margin: 0 }}>VINTED HUNTER</Title>
+        <Title level={4} style={{ color: '#a78bfa', fontWeight: 300, letterSpacing: '2px', margin: '12px 0 40px' }}>PRO RESEARCH CENTER</Title>
+        <Paragraph style={{ color: '#94a3b8', fontSize: '15px', lineHeight: '1.8', marginBottom: '48px' }}>
+          Ricerca intelligente su Vinted con monitoraggio in tempo reale.
+          Carica un&apos;immagine e lascia che l&apos;OCR faccia il lavoro per te.
+        </Paragraph>
+        <Button
+          type="primary"
+          size="large"
+          block
+          style={{ height: '64px', borderRadius: '32px', fontWeight: 900, fontSize: '16px', letterSpacing: '2px', boxShadow: '0 0 40px rgba(139,92,246,0.4)' }}
+          onClick={onEnter}
+        >
+          ENTRA NEL RADAR
+        </Button>
+        <Text style={{ display: 'block', marginTop: '48px', fontSize: '11px', color: 'rgba(167,139,250,0.4)', letterSpacing: '3px' }}>MADE BY BIAGIO</Text>
+      </div>
+    </Layout>
+  );
+}
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
+const C_PRIMARY = '#8b5cf6';
+
 export default function Home() {
+  const [ready, setReady] = useState(false);
   return (
     <ConfigProvider
       theme={{
         algorithm: theme.darkAlgorithm,
-        token: { colorPrimary: '#8b5cf6', borderRadius: 20, colorLink: '#8b5cf6', colorBgBase: '#020212', colorBgContainer: '#0a0a1f' },
+        token: { colorPrimary: C_PRIMARY, borderRadius: 12, colorLink: C_PRIMARY, colorBgBase: '#020212', colorBgContainer: '#0a0a1f' },
       }}
     >
       <App>
-        <MainApp />
+        {ready ? <Dashboard /> : <Landing onEnter={() => setReady(true)} />}
       </App>
     </ConfigProvider>
   );

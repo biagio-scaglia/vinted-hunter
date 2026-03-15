@@ -157,23 +157,38 @@ async def ocr_image(file: UploadFile = File(...)):
     contents = await file.read()
     image = Image.open(io.BytesIO(contents)).convert("RGB")
 
-    # Upscale small images — EasyOCR works best at ≥1000px on the long side
+    # Upscale — EasyOCR works best when long side ≥ 1200px
     w, h = image.size
     long_side = max(w, h)
     if long_side < 1200:
         scale = 1200 / long_side
         image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
-    # Sharpen then boost contrast
+    # Sharpen then light contrast boost
     image = image.filter(ImageFilter.SHARPEN)
-    image = ImageEnhance.Contrast(image).enhance(1.8)
+    image = ImageEnhance.Contrast(image).enhance(1.5)
 
     img_array = np.array(image)
 
     reader = get_ocr_reader()
-    results = reader.readtext(img_array, detail=0, paragraph=True, width_ths=0.7, ycenter_ths=0.5)
+    # detail=1 returns (bbox, text, confidence) — use confidence to filter noise
+    raw = reader.readtext(img_array, detail=1, paragraph=False)
 
-    text = " ".join(results).strip()
+    tokens = []
+    for (_bbox, text, conf) in raw:
+        if conf < 0.45:
+            continue
+        text = text.strip()
+        # Keep only alphanumeric + accented chars + spaces
+        clean = re.sub(r"[^a-zA-Z0-9àèéìòùÀÈÉÌÒÙ\s'-]", "", text).strip()
+        # Skip single chars and pure-digit short tokens (ratings, page numbers)
+        if len(clean) < 2:
+            continue
+        if re.fullmatch(r"\d{1,2}", clean):
+            continue
+        tokens.append(clean)
+
+    text = re.sub(r"\s{2,}", " ", " ".join(tokens)).strip()
     return {"text": text}
 
 
