@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "V-Hunter",
+    "slug": "v-hunter",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#020212"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.vhunter.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#020212"
+      },
+      "permissions": ["android.permission.CAMERA"],
+      "package": "com.vhunter.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "V-Hunter uses the camera to scan barcodes and take photos for OCR text extraction."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "V-Hunter accesses your photo library to pick images for OCR text extraction."
+        }
+      ]
+    ]
+  }
+}
