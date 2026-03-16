@@ -6,6 +6,7 @@ interface Props {
   value: string;
   onChangeText: (v: string) => void;
   onSubmit: () => void;
+  onCancel?: () => void;
   onFilterPress?: () => void;
   loading?: boolean;
   placeholder?: string;
@@ -16,6 +17,7 @@ export default function SearchBar({
   value,
   onChangeText,
   onSubmit,
+  onCancel,
   onFilterPress,
   loading,
   placeholder = 'Cerca su Vinted, Subito...',
@@ -36,8 +38,10 @@ export default function SearchBar({
           autoCapitalize="none"
           autoCorrect={false}
         />
-        {loading && (
-          <ActivityIndicator size="small" color={COLORS.primary} style={styles.spinner} />
+        {loading && onCancel && (
+          <TouchableOpacity onPress={onCancel} style={styles.stopBtn}>
+            <Ionicons name="stop-circle" size={20} color={COLORS.error} />
+          </TouchableOpacity>
         )}
       </View>
 
@@ -56,12 +60,14 @@ export default function SearchBar({
       )}
 
       <TouchableOpacity
-        style={styles.searchBtn}
-        onPress={onSubmit}
+        style={[styles.searchBtn, loading && styles.searchBtnLoading]}
+        onPress={loading ? onCancel : onSubmit}
         activeOpacity={0.8}
-        disabled={loading}
       >
-        <Ionicons name="arrow-forward" size={18} color="#fff" />
+        {loading
+          ? <ActivityIndicator size="small" color="#fff" />
+          : <Ionicons name="arrow-forward" size={18} color="#fff" />
+        }
       </TouchableOpacity>
     </View>
   );
@@ -98,8 +104,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     height: '100%',
   },
-  spinner: {
-    marginLeft: 6,
+  stopBtn: {
+    marginLeft: 4,
+    padding: 2,
   },
   filterBtn: {
     width: 42,
@@ -122,5 +129,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  searchBtnLoading: {
+    backgroundColor: COLORS.error,
   },
 });

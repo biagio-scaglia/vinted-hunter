@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Linking, ActivityIndicator } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../lib/constants';
+import { lookupBarcode } from '../lib/api';
 import type { TabParamList } from '../lib/types';
 import Animated, {
   useSharedValue,
@@ -21,6 +22,8 @@ export default function ScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [lastCode, setLastCode] = useState<string | null>(null);
+  const [productName, setProductName] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
   const navigation = useNavigation<Nav>();
 
   const lineY = useSharedValue(0);
@@ -40,22 +43,29 @@ export default function ScannerScreen() {
   }, []);
 
   const handleBarcode = useCallback(
-    ({ data }: { data: string }) => {
+    async ({ data }: { data: string }) => {
       if (scanned) return;
       setScanned(true);
       setLastCode(data);
+      setProductName(null);
+      setResolving(true);
+      const name = await lookupBarcode(data);
+      setProductName(name !== data ? name : null);
+      setResolving(false);
     },
     [scanned]
   );
 
   const handleSearch = () => {
-    if (!lastCode) return;
-    navigation.navigate('Search', { query: lastCode });
+    const query = productName ?? lastCode;
+    if (!query) return;
+    navigation.navigate('Search', { query });
   };
 
   const handleRescan = () => {
     setScanned(false);
     setLastCode(null);
+    setProductName(null);
   };
 
   if (!permission) {
@@ -118,7 +128,16 @@ export default function ScannerScreen() {
           {scanned && lastCode ? (
             <View style={styles.resultCard}>
               <Ionicons name="checkmark-circle" size={24} color={COLORS.success} />
-              <Text style={styles.resultCode} numberOfLines={1}>{lastCode}</Text>
+              {resolving ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : (
+                <>
+                  {productName && (
+                    <Text style={styles.resultName} numberOfLines={2}>{productName}</Text>
+                  )}
+                  <Text style={styles.resultCode} numberOfLines={1}>{lastCode}</Text>
+                </>
+              )}
               <View style={styles.resultActions}>
                 <TouchableOpacity style={styles.rescanBtn} onPress={handleRescan}>
                   <Text style={styles.rescanText}>Riscan</Text>
@@ -197,10 +216,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  resultCode: {
+  resultName: {
     color: COLORS.text,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  resultCode: {
+    color: COLORS.textDim,
+    fontSize: 12,
+    fontWeight: '400',
   },
   resultActions: {
     flexDirection: 'row',

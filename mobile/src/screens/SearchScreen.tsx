@@ -34,7 +34,7 @@ export default function SearchScreen() {
   const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS);
   const [saving, setSaving] = useState(false);
 
-  const { results, loading, error, lastQuery, run } = useSearch(filters);
+  const { results, loading, error, lastQuery, run, cancel } = useSearch(filters);
 
   // Initialise sources once loaded
   useEffect(() => {
@@ -80,6 +80,7 @@ export default function SearchScreen() {
         value={query}
         onChangeText={setQuery}
         onSubmit={handleSearch}
+        onCancel={cancel}
         onFilterPress={() => filterRef.current?.present()}
         loading={loading}
         filterActive={filterActive}

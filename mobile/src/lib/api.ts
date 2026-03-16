@@ -74,3 +74,24 @@ export async function deleteAlert(id: number): Promise<void> {
     headers: { 'X-Radar-Integrity': INTEGRITY_HEADER },
   });
 }
+
+// Lookup barcode → product name via Open Food Facts (free, no key needed)
+export async function lookupBarcode(code: string): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://world.openfoodfacts.org/api/v2/product/${code}?fields=product_name,brands`,
+      { headers: { 'User-Agent': 'V-Hunter/1.0' } }
+    );
+    if (!res.ok) return code;
+    const data = await res.json();
+    if (data.status === 1 && data.product) {
+      const name = data.product.product_name ?? '';
+      const brand = data.product.brands ?? '';
+      const full = [brand, name].filter(Boolean).join(' ').trim();
+      return full || code;
+    }
+  } catch {
+    // fallback to raw code
+  }
+  return code;
+}
